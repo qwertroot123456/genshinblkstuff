@@ -11,8 +11,8 @@
 
 void key_scramble1(uint8_t* key) {
     // UnityPlayer:$1615F0
-	for (unsigned i = 0; i < 0x10; i++)
-		key[i] = key_scramble_table1[((i & 3) << 8) | key[i]];
+    for (unsigned i = 0; i < 0x10; i++)
+        key[i] = key_scramble_table1[((i & 3) << 8) | key[i]];
 }
 
 uint8_t xor_combine(uint8_t* input) {
@@ -52,7 +52,7 @@ void create_decrypt_vector(uint8_t* key, uint8_t* encrypted_data, unsigned encry
 }
 
 void key_scramble2(uint8_t* key) {
-	// UnityPlayer:$26EA90
+    // UnityPlayer:$26EA90
     uint8_t expanded_key[256] = {};
 
     // usually this table gets xor'd against random data that's unique for every run
@@ -138,8 +138,8 @@ int main() {
     fread(key, sizeof(key), 1, blk_file);
     fseek(blk_file, 16, SEEK_CUR); // skip the useless half of the key
     hexdump("encrypted blk key:", key, sizeof(key));
-	key_scramble1(key);
-	key_scramble2(key);
+    key_scramble1(key);
+    key_scramble2(key);
     // this should also go into magic_constants.h, but it's small
     // this value goes through a lot of computation to get generated, but is always the same
     uint8_t hard_key[] = { 0xE3, 0xFC, 0x2D, 0x26, 0x9C, 0xC5, 0xA2, 0xEC, 0xD3, 0xF8, 0xC6, 0xD3, 0x77, 0xC2, 0x49, 0xB9 };
