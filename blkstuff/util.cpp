@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <ctype.h>
+#include <stdlib.h>
 
 // https://stackoverflow.com/questions/29242/off-the-shelf-c-hex-dump-code
 void hexdump(const char* caption, void* ptr, int buflen) {
@@ -19,4 +20,14 @@ void hexdump(const char* caption, void* ptr, int buflen) {
                 printf("%c", isprint(buf[i + j]) ? buf[i + j] : '.');
         printf("\n");
     }
+}
+
+void dump_to_file(const char* name, void* data, size_t size) {
+    auto* output = fopen(name, "wb");
+    if (!output) {
+        printf("failed to open output\n");
+        exit(1);
+    }
+    fwrite(data, size, 1, output);
+    fclose(output);
 }

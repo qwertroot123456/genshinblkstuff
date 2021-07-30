@@ -27,12 +27,10 @@ uint8_t xor_combine(uint8_t* input) {
 }
 
 void create_decrypt_vector(uint8_t* key, uint8_t* encrypted_data, uint64_t encrypted_size, uint8_t* output, uint64_t output_size) {
-    /*
     if (output_size != 4096) {
         printf("create_decrypt_vector does not support an output_size other than 4096\n");
         exit(1);
     }
-    */
 
     // TODO: reimplement this properly instead of copy and pasting from decomp
     int v9 = 0;
@@ -199,31 +197,23 @@ void mhy0_extract(uint8_t* input, size_t input_size) {
 
     hexdump("data after scramble", data, size);
 
-    uint8_t decomp_output[0x12C] = {};
-    auto lz4_res = LZ4_decompress_safe((const char*)(data + 0x27), (char*)decomp_output, size - 0x27, sizeof(decomp_output));
+    //dump_to_file("output.bin", data, size);
+
+    //uint8_t decomp_output[0x12C] = {};
+    // TODO: there is a different path for calculating this, so this might mess up on some inputs
+    uint32_t decomp_size = (uint8_t)data[32 + 1] | ((uint8_t)data[32 + 6] << 8) | ((uint8_t)data[32 + 3] << 16) | ((uint8_t)data[32 + 2] << 24);
+    printf("decompressed size: 0x%x\n", decomp_size);
+    uint8_t* decomp_output = new uint8_t[decomp_size];
+    auto lz4_res = LZ4_decompress_safe((const char*)(data + 39), (char*)decomp_output, size - 39, decomp_size);
     if (lz4_res < 0) {
         printf("decompression failed: %d\n", lz4_res);
         exit(1);
     }
 
-    auto* output = fopen("output.bin", "wb");
-    if (!output) {
-        printf("failed to open output\n");
-        exit(1);
-    }
+    dump_to_file("output.bin", decomp_output, decomp_size);
 
-    fwrite(decomp_output, sizeof(decomp_output), 1, output);
-    fclose(output);
-}
-
-void dump_to_file(const char* name, void* data, size_t size) {
-    auto* output = fopen(name, "wb");
-    if (!output) {
-        printf("failed to open output\n");
-        exit(1);
-    }
-    fwrite(data, size, 1, output);
-    fclose(output);
+    delete[] decomp_output;
+    delete[] data;
 }
 
 int main(int argc, char** argv) {
@@ -291,15 +281,16 @@ int main(int argc, char** argv) {
         data[i] ^= xorpad[i];
     */
 
-
     uint8_t xorpad[4096] = {};
     create_decrypt_vector(key, data, std::min((uint64_t)block_size, sizeof(xorpad)), xorpad, sizeof(xorpad));
     for (int i = 0; i < size; i++)
         data[i] ^= xorpad[i & 0xFFF];
-    dump_to_file("decrypted.bin", data, size);
-    dump_to_file("xorpad.bin", xorpad, sizeof(xorpad));
+    //dump_to_file("decrypted.bin", data, size);
+    //dump_to_file("xorpad.bin", xorpad, sizeof(xorpad));
 
     //fwrite(data, size, 1, output);
 
-    //mhy0_extract(data, size);
+    mhy0_extract(data, size);
+
+    delete[] data;
 }
