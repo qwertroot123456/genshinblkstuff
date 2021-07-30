@@ -4,6 +4,8 @@
 
 #include <random>
 
+#include <lz4.h>
+
 #include "util.h"
 #include "magic_constants.h"
 
@@ -24,7 +26,7 @@ uint8_t xor_combine(uint8_t* input) {
     return ret;
 }
 
-void create_decrypt_vector(uint8_t* key, uint8_t* encrypted_data, unsigned encrypted_size, uint8_t* output, unsigned output_size) {
+void create_decrypt_vector(uint8_t* key, uint8_t* encrypted_data, uint64_t encrypted_size, uint8_t* output, uint64_t output_size) {
     if (output_size != 4096) {
         printf("create_decrypt_vector does not support an output_size other than 4096\n");
         exit(1);
@@ -47,7 +49,7 @@ void create_decrypt_vector(uint8_t* key, uint8_t* encrypted_data, unsigned encry
     printf("seed: 0x%llx\n", seed);
 
     auto mt_rand = std::mt19937_64(seed);
-    for (int i = 0; i < output_size >> 3; i++)
+    for (uint64_t i = 0; i < output_size >> 3; i++)
         ((uint64_t*)output)[i] = mt_rand();
 }
 
@@ -108,9 +110,118 @@ void key_scramble2(uint8_t* key) {
         key[i] = xor_combine(&expanded_key[16 * i]);
 }
 
-int main() {
+void mhy0_header_scramble2(uint8_t* a1)
+{
+    // TODO: more cleanup
+    __int64 v1; // r10
+    unsigned __int8* v14; // rsi
+    uint8_t v20_0[16];
+    uint8_t* v26; // [rsp+10h] [rbp-70h]
+    uint8_t* v57; // [rsp+98h] [rbp+18h]
+
+    v26 = a1;
+    uint8_t mhy0_index_scramble[] = {
+        0x0B,0x02,0x08,0x0C,0x01,0x05,0x00,0x0F,0x06,0x07,0x09,0x03,0x0D,0x04,0x0E,0x0A,
+        0x04,0x05,0x07,0x0A,0x02,0x0F,0x0B,0x08,0x0E,0x0D,0x09,0x06,0x0C,0x03,0x00,0x01,
+        0x08,0x00,0x0C,0x06,0x04,0x0B,0x07,0x09,0x05,0x03,0x0F,0x01,0x0D,0x0A,0x02,0x0E,
+    };
+    uint8_t v20_1[] = {
+        0x48, 0x14, 0x36, 0xED, 0x8E, 0x44, 0x5B, 0xB6
+    };
+    uint8_t v25[] = {
+        0xA7, 0x99, 0x66, 0x50, 0xB9, 0x2D, 0xF0, 0x78
+    };
+    for (int v17 = 0; v17 < 3; v17++)
+    {
+        for (int i = 0; i < 16; ++i)
+            v20_0[i] = v26[mhy0_index_scramble[32 + -16 * v17 + i]];
+        memcpy(v26, v20_0, 16);
+        for (int j = 0; j < 16; ++j)
+        {
+            v57 = v20_1;
+            v14 = &v26[j];
+            v1 = j % 8;
+            if (*v14 == 0 || !v25[v1])
+                *v14 = key_scramble_table1[j % 4 * 256] ^ v57[j % 8];
+            else
+                *v14 = v57[v1] ^ key_scramble_table1[j % 4 * 256 | mhy0_table1[(mhy0_table2[v25[v1]] + mhy0_table2[*v14]) % 255]];
+        }
+    }
+}
+
+void mhy0_header_scramble(uint8_t* input, uint64_t a2, uint8_t* input2, uint64_t a4) {
+    if (!((a2 == 0x39 && a4 == 0x1C) || (a2 == 0x21 && a4 == 8))) {
+        printf("unsupported parameters for mhy0_header_scramble\n");
+        exit(1);
+    }
+
+    // TODO: reimplement this properly instead of copy and pasting from decomp
+    int v10 = (a4 + 15) & 0xFFFFFFF0;
+    for (int i = 0; i < v10; i += 16)
+        mhy0_header_scramble2(&input[i + 4]);
+    for (int j = 0; j < 4; j++)
+        input[j] ^= input2[j];
+    uint64_t v8 = (uint64_t)v10 + 4;
+    int v13 = 0;
+    while (v8 < a2 && !v13)
+    {
+        for (int k = 0; k < a4; ++k)
+        {
+            input[k + v8] ^= input2[k];
+            if (k + v8 >= a2 - 1)
+            {
+                v13 = 1;
+                break;
+            }
+        }
+        v8 += a4;
+    }
+}
+
+void mhy0_extract(uint8_t* input, size_t input_size) {
+    // TODO: bounds checks
+    if (*(uint32_t*)input != 0x3079686D) { // mhy0
+        printf("decrypted data didn't start with mhy0, so decryption probably failed\n");
+        exit(1);
+    }
+
+    uint32_t size = *(uint32_t*)(input + 4);
+    printf("first size 0x%x\n", size);
+
+    auto* data = new uint8_t[size];
+    memcpy(data, input + 8, size);
+
+    hexdump("initial data", data, size);
+
+    mhy0_header_scramble(data, 0x39, data + 4, 0x1C);
+
+    hexdump("data after scramble", data, size);
+
+    uint8_t decomp_output[0x12C] = {};
+    auto lz4_res = LZ4_decompress_safe((const char*)(data + 0x27), (char*)decomp_output, size - 0x27, sizeof(decomp_output));
+    if (lz4_res < 0) {
+        printf("decompression failed: %d\n", lz4_res);
+        exit(1);
+    }
+
+    auto* output = fopen("output.bin", "wb");
+    if (!output) {
+        printf("failed to open output\n");
+        exit(1);
+    }
+
+    fwrite(decomp_output, sizeof(decomp_output), 1, output);
+    fclose(output);
+}
+
+int main(int argc, char** argv) {
     //auto* blk_file = fopen("D:\\genshinimpactre\\1.5-dev\\YuanShen_Data\\StreamingAssets\\20527480.blk", "rb");
-    auto* blk_file = fopen("D:\\Games\\Genshin Impact\\Genshin Impact game\\GenshinImpact_Data\\StreamingAssets\\VideoAssets\\26236578.blk", "rb");
+    //auto* blk_file = fopen("D:\\Games\\Genshin Impact\\Genshin Impact game\\GenshinImpact_Data\\StreamingAssets\\VideoAssets\\26236578.blk", "rb");
+    if (argc < 2) {
+        printf("you need an input file\n");
+        return 1;
+    }
+    auto* blk_file = fopen(argv[1], "rb");
     if (!blk_file) {
         printf("failed to open blk\n");
         return 1;
@@ -172,6 +283,7 @@ int main() {
         processed += to_process;
     }
 
+    /*
     auto* output = fopen("decrypted.bin", "wb");
     if (!output) {
         printf("failed to open output\n");
@@ -179,4 +291,7 @@ int main() {
     }
     fwrite(data, size, 1, output);
     fclose(output);
+    */
+
+    mhy0_extract(data, size);
 }
