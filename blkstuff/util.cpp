@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <string.h>
 
 // https://stackoverflow.com/questions/29242/off-the-shelf-c-hex-dump-code
 void hexdump(const char* caption, void* ptr, int buflen) {
@@ -31,3 +32,22 @@ void dump_to_file(const char* name, void* data, size_t size) {
     fwrite(data, size, 1, output);
     fclose(output);
 }
+
+#ifndef memmem
+// https://stackoverflow.com/questions/52988769/writing-own-memmem-for-windows
+void* memmem(void* haystack, size_t haystack_len, void* needle, size_t needle_len) {
+    if (haystack == NULL) return NULL; // or assert(haystack != NULL);
+    if (haystack_len == 0) return NULL;
+    if (needle == NULL) return NULL; // or assert(needle != NULL);
+    if (needle_len == 0) return NULL;
+
+    for (const char* h = (const char*)haystack;
+        haystack_len >= needle_len;
+        ++h, --haystack_len) {
+        if (!memcmp(h, needle, needle_len)) {
+            return (void*)h;
+        }
+    }
+    return NULL;
+}
+#endif

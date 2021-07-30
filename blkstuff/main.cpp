@@ -112,6 +112,7 @@ void key_scramble2(uint8_t* key) {
 
 void mhy0_header_scramble2(uint8_t* a1)
 {
+    // UnityPlayer:$152300
     // TODO: more cleanup
     __int64 v1; // r10
     unsigned __int8* v14; // rsi
@@ -155,6 +156,7 @@ void mhy0_header_scramble(uint8_t* input, uint64_t a2, uint8_t* input2, uint64_t
         exit(1);
     }
 
+    // UnityPlayer:$151090
     // TODO: reimplement this properly instead of copy and pasting from decomp
     int v10 = (a4 + 15) & 0xFFFFFFF0;
     for (int i = 0; i < v10; i += 16)
@@ -178,7 +180,8 @@ void mhy0_header_scramble(uint8_t* input, uint64_t a2, uint8_t* input2, uint64_t
     }
 }
 
-void mhy0_extract(uint8_t* input, size_t input_size) {
+void mhy0_extract(int block_index, uint8_t* input, size_t input_size) {
+    // loosely based on UnityPlayer:$1C64C0
     // TODO: bounds checks
     if (*(uint32_t*)input != 0x3079686D) { // mhy0
         printf("decrypted data didn't start with mhy0, so decryption probably failed\n");
@@ -191,29 +194,65 @@ void mhy0_extract(uint8_t* input, size_t input_size) {
     auto* data = new uint8_t[size];
     memcpy(data, input + 8, size);
 
-    hexdump("initial data", data, size);
+    //hexdump("initial data", data, size);
 
     mhy0_header_scramble(data, 0x39, data + 4, 0x1C);
 
-    hexdump("data after scramble", data, size);
+    //hexdump("data after scramble", data, size);
 
     //dump_to_file("output.bin", data, size);
 
-    //uint8_t decomp_output[0x12C] = {};
     // TODO: there is a different path for calculating this, so this might mess up on some inputs
-    uint32_t decomp_size = (uint8_t)data[32 + 1] | ((uint8_t)data[32 + 6] << 8) | ((uint8_t)data[32 + 3] << 16) | ((uint8_t)data[32 + 2] << 24);
+    //uint32_t decomp_size = MAKE_UINT32(data[0x20 + 1], data[0x20 + 6], data[0x20 + 3], data[0x20 + 2]);
+    uint32_t decomp_size = MAKE_UINT32(data, 0x20 + 1, 0x20 + 6, 0x20 + 3, 0x20 + 2);
     printf("decompressed size: 0x%x\n", decomp_size);
     uint8_t* decomp_output = new uint8_t[decomp_size];
-    auto lz4_res = LZ4_decompress_safe((const char*)(data + 39), (char*)decomp_output, size - 39, decomp_size);
+    auto lz4_res = LZ4_decompress_safe((const char*)(data + 0x27), (char*)decomp_output, size - 0x27, decomp_size);
     if (lz4_res < 0) {
         printf("decompression failed: %d\n", lz4_res);
         exit(1);
     }
+    delete[] data;
+    //dump_to_file("mhy0_header.bin", decomp_output, decomp_size);
 
-    dump_to_file("output.bin", decomp_output, decomp_size);
+    //printf("next data cmp size: 0x%x\n", MAKE_UINT32(decomp_output, 0x11F + 2, 0x11F + 4, 0x11F, 0x11F + 5));
+    //printf("next data decmp size: 0x%x\n", MAKE_UINT32(decomp_output, 0x112 + 1, 0x112 + 6, 0x112 + 3, 0x112 + 2));
+    printf("unknown 1: 0x%x\n", MAKE_UINT32(decomp_output, 0x10C + 2, 0x10C + 4, 0x10C, 0x10C + 5));
+    auto entry_count = MAKE_UINT32(decomp_output, 0x119 + 2, 0x119 + 4, 0x119, 0x119 + 5);
+    printf("entry count: 0x%x\n", entry_count);
+
+    uint8_t* entry_ptr = input + 0x8 + size;
+    char filename[0x100] = {};
+    snprintf(filename, sizeof(filename), "output%d.bin", block_index);
+    auto* output = fopen(filename, "wb");
+    if (!output) {
+        printf("failed to open output.bin\n");
+        exit(1);
+    }
+    for (int i = 0; i < entry_count; i++) {
+        //printf("processing entry %d\n", i);
+        auto offset = i * 13;
+        auto entry_cmp_size = MAKE_UINT32(decomp_output, offset + 0x11F + 2, offset + 0x11F + 4, offset + 0x11F, offset + 0x11F + 5);
+        auto entry_decmp_size = MAKE_UINT32(decomp_output, offset + 0x125 + 1, offset + 0x125 + 6, offset + 0x125 + 3, offset + 0x125 + 2);
+        //printf("%x\n", entry_cmp_size);
+        //hexdump("initial data", entry_ptr, entry_cmp_size);
+        mhy0_header_scramble(entry_ptr, 0x21, entry_ptr + 4, 8);
+        //hexdump("data after scramble", entry_ptr, entry_cmp_size);
+
+        auto* entry_decmp = new uint8_t[entry_decmp_size];
+        auto lz4_res = LZ4_decompress_safe((const char*)(entry_ptr + 0xC), (char*)entry_decmp, entry_cmp_size - 0xC, entry_decmp_size);
+        if (lz4_res < 0) {
+            printf("decompression failed: %d\n", lz4_res);
+            exit(1);
+        }
+        //dump_to_file(filename, entry_decmp, entry_decmp_size);
+        fwrite(entry_decmp, entry_decmp_size, 1, output);
+        delete[] entry_decmp;
+        entry_ptr += entry_cmp_size;
+    }
+    fclose(output);
 
     delete[] decomp_output;
-    delete[] data;
 }
 
 int main(int argc, char** argv) {
@@ -290,7 +329,22 @@ int main(int argc, char** argv) {
 
     //fwrite(data, size, 1, output);
 
-    mhy0_extract(data, size);
+    std::vector<size_t> mhy0_locs;
+    size_t last_loc = 0;
+    for (int i = 0; ; i++) {
+        auto res = memmem(data + last_loc, size - last_loc, (void*)"mhy0", 4);
+        if (res) {
+            auto loc = (uint8_t*)res - data;
+            mhy0_locs.push_back(loc);
+            printf("found mhy0 at 0x%llx\n", loc);
+            mhy0_extract(i, data + loc, size);
+            last_loc = loc + 4;
+        } else {
+            break;
+        }
+    }
+
+    //mhy0_extract(data, size);
 
     delete[] data;
 }
