@@ -27,10 +27,12 @@ uint8_t xor_combine(uint8_t* input) {
 }
 
 void create_decrypt_vector(uint8_t* key, uint8_t* encrypted_data, uint64_t encrypted_size, uint8_t* output, uint64_t output_size) {
+    /*
     if (output_size != 4096) {
         printf("create_decrypt_vector does not support an output_size other than 4096\n");
         exit(1);
     }
+    */
 
     // TODO: reimplement this properly instead of copy and pasting from decomp
     int v9 = 0;
@@ -46,7 +48,7 @@ void create_decrypt_vector(uint8_t* key, uint8_t* encrypted_data, uint64_t encry
     auto* key_qword = (uint64_t*)key;
     // another magic constant, this time from blk_stuff2
     uint64_t seed = key_qword[1] ^ 0x567BA22BABB08098 ^ i ^ key_qword[0];
-    printf("seed: 0x%llx\n", seed);
+    //printf("seed: 0x%llx\n", seed);
 
     auto mt_rand = std::mt19937_64(seed);
     for (uint64_t i = 0; i < output_size >> 3; i++)
@@ -258,8 +260,13 @@ int main(int argc, char** argv) {
         key[i] ^= hard_key[i];
     hexdump("decrypted blk key:", key, sizeof(key));
 
-    uint16_t size = 0;
-    fread(&size, sizeof(size), 1, blk_file);
+    uint16_t block_size = 0;
+    fread(&block_size, sizeof(block_size), 1, blk_file);
+    printf("0x%x\n", block_size);
+
+    fseek(blk_file, 0, SEEK_END);
+    size_t size = ftell(blk_file);
+    fseek(blk_file, 0x2A, SEEK_SET); // skip xorpad size
 
     auto* data = new uint8_t[size];
     fread(data, size, 1, blk_file);
@@ -274,24 +281,26 @@ int main(int argc, char** argv) {
         data[i] ^= xorpad[i];
     */
 
-    uint8_t xorpad[4096] = {};
-    for (size_t processed = 0; processed < size; ) {
-        size_t to_process = std::min((uint64_t)size, sizeof(xorpad));
-        create_decrypt_vector(key, data + processed, to_process, xorpad, sizeof(xorpad));
-        for (int i = 0; i < to_process; i++)
-            data[i] ^= xorpad[i];
-        processed += to_process;
-    }
-
-    /*
     auto* output = fopen("decrypted.bin", "wb");
     if (!output) {
         printf("failed to open output\n");
         return 1;
     }
-    fwrite(data, size, 1, output);
+    uint8_t xorpad[4096] = {};
+    for (size_t processed = 0; processed < size; ) {
+        size_t to_process = std::min(std::min((uint64_t)block_size, sizeof(xorpad)), size - processed);
+        if (processed == 0)
+            create_decrypt_vector(key, data + processed, to_process, xorpad, sizeof(xorpad));
+        for (int i = 0; i < to_process; i++)
+            data[processed + i] ^= xorpad[i];
+        fwrite(data, to_process, 1, output);
+        processed += to_process;
+    }
     fclose(output);
-    */
 
-    mhy0_extract(data, size);
+
+    //fwrite(data, size, 1, output);
+
+
+    //mhy0_extract(data, size);
 }
