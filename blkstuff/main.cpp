@@ -216,6 +216,16 @@ void mhy0_extract(uint8_t* input, size_t input_size) {
     fclose(output);
 }
 
+void dump_to_file(const char* name, void* data, size_t size) {
+    auto* output = fopen(name, "wb");
+    if (!output) {
+        printf("failed to open output\n");
+        exit(1);
+    }
+    fwrite(data, size, 1, output);
+    fclose(output);
+}
+
 int main(int argc, char** argv) {
     //auto* blk_file = fopen("D:\\genshinimpactre\\1.5-dev\\YuanShen_Data\\StreamingAssets\\20527480.blk", "rb");
     //auto* blk_file = fopen("D:\\Games\\Genshin Impact\\Genshin Impact game\\GenshinImpact_Data\\StreamingAssets\\VideoAssets\\26236578.blk", "rb");
@@ -281,26 +291,15 @@ int main(int argc, char** argv) {
         data[i] ^= xorpad[i];
     */
 
-    auto* output = fopen("decrypted.bin", "wb");
-    if (!output) {
-        printf("failed to open output\n");
-        return 1;
-    }
-    uint8_t xorpad[4096] = {};
-    for (size_t processed = 0; processed < size; ) {
-        size_t to_process = std::min(std::min((uint64_t)block_size, sizeof(xorpad)), size - processed);
-        if (processed == 0)
-            create_decrypt_vector(key, data + processed, to_process, xorpad, sizeof(xorpad));
-        for (int i = 0; i < to_process; i++)
-            data[processed + i] ^= xorpad[i];
-        fwrite(data, to_process, 1, output);
-        processed += to_process;
-    }
-    fclose(output);
 
+    uint8_t xorpad[4096] = {};
+    create_decrypt_vector(key, data, std::min((uint64_t)block_size, sizeof(xorpad)), xorpad, sizeof(xorpad));
+    for (int i = 0; i < size; i++)
+        data[i] ^= xorpad[i & 0xFFF];
+    dump_to_file("decrypted.bin", data, size);
+    dump_to_file("xorpad.bin", xorpad, sizeof(xorpad));
 
     //fwrite(data, size, 1, output);
-
 
     //mhy0_extract(data, size);
 }
