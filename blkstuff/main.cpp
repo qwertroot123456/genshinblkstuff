@@ -192,6 +192,12 @@ void mhy0_extract(const char* out_format, int block_index, uint8_t* input, size_
     uint32_t size = *(uint32_t*)(input + 4);
     //printf("first size 0x%x\n", size);
 
+    if (size > input_size) {
+        // TODO: this is probably caused by the awful mhy0 searching approach i do instead of properly calculating offsets
+        printf("oh shit! attempted to get 0x%x bytes out of a 0x%llx input! skipping mhy0 %d...", size, input_size, block_index);
+        return;
+    }
+
     auto* data = new uint8_t[size];
     memcpy(data, input + 8, size);
 
