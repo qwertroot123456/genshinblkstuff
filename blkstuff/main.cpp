@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <random>
+#include <filesystem>
 
 #include <lz4.h>
 
@@ -180,7 +181,7 @@ void mhy0_header_scramble(uint8_t* input, uint64_t a2, uint8_t* input2, uint64_t
     }
 }
 
-void mhy0_extract(int block_index, uint8_t* input, size_t input_size) {
+void mhy0_extract(const char* out_format, int block_index, uint8_t* input, size_t input_size) {
     // loosely based on UnityPlayer:$1C64C0
     // TODO: bounds checks
     if (*(uint32_t*)input != 0x3079686D) { // mhy0
@@ -189,7 +190,7 @@ void mhy0_extract(int block_index, uint8_t* input, size_t input_size) {
     }
 
     uint32_t size = *(uint32_t*)(input + 4);
-    printf("first size 0x%x\n", size);
+    //printf("first size 0x%x\n", size);
 
     auto* data = new uint8_t[size];
     memcpy(data, input + 8, size);
@@ -205,7 +206,7 @@ void mhy0_extract(int block_index, uint8_t* input, size_t input_size) {
     // TODO: there is a different path for calculating this, so this might mess up on some inputs
     //uint32_t decomp_size = MAKE_UINT32(data[0x20 + 1], data[0x20 + 6], data[0x20 + 3], data[0x20 + 2]);
     uint32_t decomp_size = MAKE_UINT32(data, 0x20 + 1, 0x20 + 6, 0x20 + 3, 0x20 + 2);
-    printf("decompressed size: 0x%x\n", decomp_size);
+    //printf("decompressed size: 0x%x\n", decomp_size);
     uint8_t* decomp_output = new uint8_t[decomp_size];
     auto lz4_res = LZ4_decompress_safe((const char*)(data + 0x27), (char*)decomp_output, size - 0x27, decomp_size);
     if (lz4_res < 0) {
@@ -217,12 +218,12 @@ void mhy0_extract(int block_index, uint8_t* input, size_t input_size) {
 
     //printf("next data cmp size: 0x%x\n", MAKE_UINT32(decomp_output, 0x11F + 2, 0x11F + 4, 0x11F, 0x11F + 5));
     //printf("next data decmp size: 0x%x\n", MAKE_UINT32(decomp_output, 0x112 + 1, 0x112 + 6, 0x112 + 3, 0x112 + 2));
-    printf("unknown 1: 0x%x\n", MAKE_UINT32(decomp_output, 0x10C + 2, 0x10C + 4, 0x10C, 0x10C + 5));
+    //printf("unknown 1: 0x%x\n", MAKE_UINT32(decomp_output, 0x10C + 2, 0x10C + 4, 0x10C, 0x10C + 5));
     auto cab_count = MAKE_UINT32(decomp_output, 2, 4, 0, 5);
-    printf("cab count: 0x%x\n", cab_count);
+    //printf("cab count: 0x%x\n", cab_count);
     //auto entry_count = MAKE_UINT32(decomp_output, 0x119 + 2, 0x119 + 4, 0x119, 0x119 + 5);
     auto entry_count = MAKE_UINT32(decomp_output, cab_count * 0x113 + 6 + 2, cab_count * 0x113 + 6 + 4, cab_count * 0x113 + 6, cab_count * 0x113 + 6 + 5);
-    printf("entry count: 0x%x\n", entry_count);
+    //printf("entry count: 0x%x\n", entry_count);
     //dump_to_file("bruh.bin", decomp_output, decomp_size);
     //hexdump("asdf", decomp_output, decomp_size);
     //exit(1);
@@ -234,10 +235,11 @@ void mhy0_extract(int block_index, uint8_t* input, size_t input_size) {
 
     uint8_t* entry_ptr = input + 0x8 + size;
     char filename[0x100] = {};
-    snprintf(filename, sizeof(filename), "output%d.bin", block_index);
+    //printf("%s\n", out_format);
+    snprintf(filename, sizeof(filename), out_format, block_index);
     auto* output = fopen(filename, "wb");
     if (!output) {
-        printf("failed to open output.bin\n");
+        printf("failed to open %s\n", filename);
         exit(1);
     }
     for (int i = 0; i < entry_count; i++) {
@@ -266,14 +268,10 @@ void mhy0_extract(int block_index, uint8_t* input, size_t input_size) {
     delete[] decomp_output;
 }
 
-int main(int argc, char** argv) {
+int extract_blk(char* in_filename, const char* out_format) {
     //auto* blk_file = fopen("D:\\genshinimpactre\\1.5-dev\\YuanShen_Data\\StreamingAssets\\20527480.blk", "rb");
     //auto* blk_file = fopen("D:\\Games\\Genshin Impact\\Genshin Impact game\\GenshinImpact_Data\\StreamingAssets\\VideoAssets\\26236578.blk", "rb");
-    if (argc < 2) {
-        printf("you need an input file\n");
-        return 1;
-    }
-    auto* blk_file = fopen(argv[1], "rb");
+    auto* blk_file = fopen(in_filename, "rb");
     if (!blk_file) {
         printf("failed to open blk\n");
         return 1;
@@ -300,7 +298,7 @@ int main(int argc, char** argv) {
     uint8_t key[16] = {};
     fread(key, sizeof(key), 1, blk_file);
     fseek(blk_file, 16, SEEK_CUR); // skip the useless half of the key
-    hexdump("encrypted blk key:", key, sizeof(key));
+    //hexdump("encrypted blk key:", key, sizeof(key));
     key_scramble1(key);
     key_scramble2(key);
     // this should also go into magic_constants.h, but it's small
@@ -308,11 +306,11 @@ int main(int argc, char** argv) {
     uint8_t hard_key[] = { 0xE3, 0xFC, 0x2D, 0x26, 0x9C, 0xC5, 0xA2, 0xEC, 0xD3, 0xF8, 0xC6, 0xD3, 0x77, 0xC2, 0x49, 0xB9 };
     for (int i = 0; i < 16; i++)
         key[i] ^= hard_key[i];
-    hexdump("decrypted blk key:", key, sizeof(key));
+    //hexdump("decrypted blk key:", key, sizeof(key));
 
     uint16_t block_size = 0;
     fread(&block_size, sizeof(block_size), 1, blk_file);
-    printf("0x%x\n", block_size);
+    //printf("0x%x\n", block_size);
 
     fseek(blk_file, 0, SEEK_END);
     size_t size = ftell(blk_file);
@@ -347,8 +345,8 @@ int main(int argc, char** argv) {
         if (res) {
             auto loc = (uint8_t*)res - data;
             mhy0_locs.push_back(loc);
-            printf("found mhy0 at 0x%llx\n", loc);
-            mhy0_extract(i, data + loc, size);
+            //printf("found mhy0 at 0x%llx\n", loc);
+            mhy0_extract(out_format, i, data + loc, size);
             last_loc = loc + 4;
         } else {
             break;
@@ -358,4 +356,48 @@ int main(int argc, char** argv) {
     //mhy0_extract(data, size);
 
     delete[] data;
+}
+
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        printf("you need an input file\n");
+        return 1;
+    }
+    if (!strcmp(argv[1], "batch")) {
+        if (argc < 4) {
+            printf("you need input and output folders for batch mode\n");
+            return 1;
+        }
+
+        auto base_path = std::filesystem::path(argv[2]);
+        std::vector<std::filesystem::path> blk_paths;
+        printf("scanning for blks\n");
+        try {
+            for (auto& p : std::filesystem::recursive_directory_iterator(base_path)) {
+                if (p.path().extension() == ".blk")
+                    //printf("%ws\n", p.path().lexically_relative(base_path).c_str());
+                    blk_paths.push_back(p.path().lexically_relative(base_path));
+            }
+        } catch (const std::exception& e) {
+            printf("failed to search for blk files with error: %s\n", e.what());
+            return 1;
+        }
+        printf("found %llu blks to extract\n", blk_paths.size());
+
+        auto output_base = std::filesystem::path(argv[3]);
+        for (auto& p : blk_paths) {
+            printf("processing %ws...", p.c_str());
+
+            auto input_path = base_path / p;
+            auto output_path = (output_base / p).replace_extension(".%d.bin");
+            auto output_dir = std::filesystem::path(output_path).remove_filename();
+            //printf("%ws\n", output_path.c_str());
+            std::filesystem::create_directories(output_dir);
+            extract_blk((char*)input_path.generic_string().c_str(), output_path.generic_string().c_str());
+
+            printf("ok\n");
+        }
+    } else {
+        extract_blk(argv[1], "output%d.bin");
+    }
 }
