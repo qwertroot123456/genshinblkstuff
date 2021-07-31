@@ -218,8 +218,19 @@ void mhy0_extract(int block_index, uint8_t* input, size_t input_size) {
     //printf("next data cmp size: 0x%x\n", MAKE_UINT32(decomp_output, 0x11F + 2, 0x11F + 4, 0x11F, 0x11F + 5));
     //printf("next data decmp size: 0x%x\n", MAKE_UINT32(decomp_output, 0x112 + 1, 0x112 + 6, 0x112 + 3, 0x112 + 2));
     printf("unknown 1: 0x%x\n", MAKE_UINT32(decomp_output, 0x10C + 2, 0x10C + 4, 0x10C, 0x10C + 5));
-    auto entry_count = MAKE_UINT32(decomp_output, 0x119 + 2, 0x119 + 4, 0x119, 0x119 + 5);
+    auto cab_count = MAKE_UINT32(decomp_output, 2, 4, 0, 5);
+    printf("cab count: 0x%x\n", cab_count);
+    //auto entry_count = MAKE_UINT32(decomp_output, 0x119 + 2, 0x119 + 4, 0x119, 0x119 + 5);
+    auto entry_count = MAKE_UINT32(decomp_output, cab_count * 0x113 + 6 + 2, cab_count * 0x113 + 6 + 4, cab_count * 0x113 + 6, cab_count * 0x113 + 6 + 5);
     printf("entry count: 0x%x\n", entry_count);
+    //dump_to_file("bruh.bin", decomp_output, decomp_size);
+    //hexdump("asdf", decomp_output, decomp_size);
+    //exit(1);
+    //if (entry_count > 0x10000) {
+        //hexdump("wtf???? something probably went wrong!", decomp_output, decomp_size);
+        //printf("0x%x\n", MAKE_UINT32(decomp_output, 2, 4, 0, 5));
+        //exit(1);
+    //}
 
     uint8_t* entry_ptr = input + 0x8 + size;
     char filename[0x100] = {};
@@ -231,9 +242,9 @@ void mhy0_extract(int block_index, uint8_t* input, size_t input_size) {
     }
     for (int i = 0; i < entry_count; i++) {
         //printf("processing entry %d\n", i);
-        auto offset = i * 13;
-        auto entry_cmp_size = MAKE_UINT32(decomp_output, offset + 0x11F + 2, offset + 0x11F + 4, offset + 0x11F, offset + 0x11F + 5);
-        auto entry_decmp_size = MAKE_UINT32(decomp_output, offset + 0x125 + 1, offset + 0x125 + 6, offset + 0x125 + 3, offset + 0x125 + 2);
+        auto offset = i * 13 + cab_count * 0x113 + 6;
+        auto entry_cmp_size = MAKE_UINT32(decomp_output, offset + 6 + 2, offset + 6 + 4, offset + 6, offset + 6 + 5);
+        auto entry_decmp_size = MAKE_UINT32(decomp_output, offset + 0xC + 1, offset + 0xC + 6, offset + 0xC + 3, offset + 0xC + 2);
         //printf("%x\n", entry_cmp_size);
         //hexdump("initial data", entry_ptr, entry_cmp_size);
         mhy0_header_scramble(entry_ptr, 0x21, entry_ptr + 4, 8);
